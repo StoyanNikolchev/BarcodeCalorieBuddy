@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.androidx.room)
 }
 
 android {
@@ -69,4 +70,8 @@ dependencies {
     implementation libs.ktor.client.content.negotiation
     implementation libs.ktor.serialization.kotlinx.json
     implementation libs.coil.compose
+}
+
+room {
+    schemaDirectory("$projectDir/schemas")
 }

@@ -5,20 +5,24 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -30,18 +34,22 @@ import coil.compose.AsyncImage
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.di.Injection
 import com.example.barcodecaloriebuddy.network.FoodFactsApiService
+import com.example.barcodecaloriebuddy.network.dto.Product
 import com.example.barcodecaloriebuddy.network.dto.ProductResponse
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.Executors
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BarcodeScannerScreen(modifier: Modifier = Modifier) {
+fun BarcodeScannerScreen(modifier: Modifier = Modifier, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val foodRepository = remember { Injection.provideFoodRepository(context) }
@@ -55,11 +63,9 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier) {
     )
 
     var uiState by remember { mutableStateOf<ScannerUiState>(ScannerUiState.Scanning) }
-    var quantity by remember { mutableStateOf("") }
 
     fun resetScannerState() {
         uiState = ScannerUiState.Scanning
-        quantity = ""
     }
 
     LaunchedEffect(key1 = true) {
@@ -68,58 +74,67 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        when (val state = uiState) {
-            is ScannerUiState.Scanning -> {
-                CameraPreview { barcode ->
-                    uiState = ScannerUiState.Loading
-                    coroutineScope.launch {
-                        try {
-                            val apiService = FoodFactsApiService.create()
-                            val response = apiService.getProduct(barcode)
-                            if (response.status == 1 && response.product != null) {
-                                uiState = ScannerUiState.ProductFound(response)
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                title = { Text("Scan Barcode") },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            when (val state = uiState) {
+                is ScannerUiState.Scanning -> {
+                    CameraPreview { barcode ->
+                        uiState = ScannerUiState.Loading
+                        coroutineScope.launch {
+                            val existingItem = foodRepository.findMostRecentByBarcode(barcode)
+                            if (existingItem != null) {
+                                uiState = ScannerUiState.ProductFound(existingItem.toProductResponse(), isFromCache = true)
                             } else {
-                                uiState = ScannerUiState.ProductNotFound
+                                try {
+                                    val apiService = FoodFactsApiService.create()
+                                    val response = apiService.getProduct(barcode)
+                                    if (response.status == 1 && response.product != null) {
+                                        uiState = ScannerUiState.ProductFound(response, isFromCache = false)
+                                    } else {
+                                        uiState = ScannerUiState.ProductNotFound
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    uiState = ScannerUiState.Error("Network request failed.")
+                                }
                             }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            uiState = ScannerUiState.Error("Network request failed.")
                         }
                     }
                 }
-            }
-            is ScannerUiState.Loading -> {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            }
-            is ScannerUiState.ProductFound -> {
-                ProductDetails(state.response, quantity, onQuantityChange = { quantity = it }) {
-                    coroutineScope.launch {
-                        val product = state.response.product
-                        val caloriesPer100g = product?.nutriments?.energyKcal100g.toIntOrNull() ?: 0
-                        val grams = quantity.toIntOrNull() ?: 0
-                        val totalCalories = (caloriesPer100g / 100.0 * grams).toInt()
-                        foodRepository.insertFoodItem(
-                            FoodItem(
-                                name = product?.productName ?: "Unknown Product",
-                                calories = totalCalories,
-                                quantity = grams
-                            )
-                        )
-                        resetScannerState()
+                is ScannerUiState.Loading -> {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                }
+                is ScannerUiState.ProductFound -> {
+                    ProductDetails(state) { updatedProduct ->
+                        coroutineScope.launch {
+                            foodRepository.addOrUpdateFoodItem(updatedProduct)
+                            onDismiss()
+                        }
                     }
                 }
+                is ScannerUiState.ProductNotFound -> {
+                    ErrorScreen("Product not found for this barcode.", onRetry = { resetScannerState() })
+                }
+                is ScannerUiState.Error -> {
+                    ErrorScreen(state.message, onRetry = { resetScannerState() })
+                }
             }
-            is ScannerUiState.ProductNotFound -> {
-                ErrorScreen("Product not found for this barcode.", onRetry = { resetScannerState() })
-            }
-            is ScannerUiState.Error -> {
-                ErrorScreen(state.message, onRetry = { resetScannerState() })
-            }
-        }
 
-        if (!hasCameraPermission && uiState is ScannerUiState.Scanning) {
-            Text("Camera permission not granted", modifier = Modifier.align(Alignment.Center))
+            if (!hasCameraPermission && uiState is ScannerUiState.Scanning) {
+                Text("Camera permission not granted", modifier = Modifier.align(Alignment.Center))
+            }
         }
     }
 }
@@ -127,7 +142,7 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier) {
 sealed class ScannerUiState {
     object Scanning : ScannerUiState()
     object Loading : ScannerUiState()
-    data class ProductFound(val response: ProductResponse) : ScannerUiState()
+    data class ProductFound(val response: ProductResponse, val isFromCache: Boolean) : ScannerUiState()
     object ProductNotFound : ScannerUiState()
     data class Error(val message: String) : ScannerUiState()
 }
@@ -194,20 +209,29 @@ private fun CameraPreview(onBarcodeScanned: (String) -> Unit) {
 
 @Composable
 private fun ProductDetails(
-    productResponse: ProductResponse?,
-    quantity: String,
-    onQuantityChange: (String) -> Unit,
-    onAdd: () -> Unit
+    state: ScannerUiState.ProductFound,
+    onAdd: (FoodItem) -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        val product = productResponse?.product
-        val productName = product?.productName ?: "Product name not found"
-        val caloriesPer100g = product?.nutriments?.energyKcal100g.toIntOrNull() ?: 0
+    val product = state.response.product
+    var quantity by remember { mutableStateOf("") }
+    var caloriesPer100g by remember(state.response.code) {
+        val initialCalories = product?.nutriments?.energyKcal100g.toIntOrNull()?.toString() ?: "0"
+        mutableStateOf(initialCalories)
+    }
+    var productName by remember(state.response.code) {
+        mutableStateOf(product?.productName ?: "Product name not found")
+    }
+    var showEditCaloriesDialog by remember { mutableStateOf(false) }
+    var showEditNameDialog by remember { mutableStateOf(false) }
 
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top
+    ) {
         AsyncImage(
             model = product?.imageUrl,
             contentDescription = productName,
@@ -215,26 +239,153 @@ private fun ProductDetails(
             contentScale = ContentScale.Fit
         )
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = productName)
-        Text(text = "Calories per 100g: $caloriesPer100g")
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = productName)
+            if (!state.isFromCache) {
+                IconButton(onClick = { showEditNameDialog = true }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Name")
+                }
+            }
+        }
+
+        val isCaloriesMissing = caloriesPer100g == "0"
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Calories per 100g: $caloriesPer100g",
+                color = if (isCaloriesMissing && !state.isFromCache) MaterialTheme.colorScheme.error else Color.Unspecified
+            )
+            if (!state.isFromCache) {
+                IconButton(onClick = { showEditCaloriesDialog = true }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Calories")
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         TextField(
             value = quantity,
-            onValueChange = onQuantityChange,
+            onValueChange = { quantity = it },
             label = { Text("Quantity (grams)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = onAdd) {
+        val isAddEnabled = (quantity.toIntOrNull() ?: 0) > 0 && (caloriesPer100g.toIntOrNull() ?: 0) > 0
+        Button(
+            onClick = {
+                val finalCaloriesPer100g = caloriesPer100g.toIntOrNull() ?: 0
+                val grams = quantity.toIntOrNull() ?: 0
+                val totalCalories = (finalCaloriesPer100g / 100.0 * grams).toInt()
+                val itemToAdd = FoodItem(
+                    name = productName,
+                    calories = totalCalories,
+                    quantity = grams,
+                    imageUrl = product?.imageUrl,
+                    caloriesPer100g = finalCaloriesPer100g,
+                    barcode = state.response.code
+                )
+                onAdd(itemToAdd)
+            },
+            enabled = isAddEnabled
+        ) {
             Text("ADD")
         }
     }
+
+    if (showEditCaloriesDialog) {
+        EditCaloriesDialog(
+            initialValue = caloriesPer100g,
+            onDismiss = { showEditCaloriesDialog = false },
+            onConfirm = {
+                caloriesPer100g = it
+                showEditCaloriesDialog = false
+            }
+        )
+    }
+
+    if (showEditNameDialog) {
+        EditNameDialog(
+            initialValue = if (productName == "Product name not found") "" else productName,
+            onDismiss = { showEditNameDialog = false },
+            onConfirm = { 
+                productName = it
+                showEditNameDialog = false
+            }
+        )
+    }
 }
 
+@Composable
+private fun EditCaloriesDialog(
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var calories by remember { mutableStateOf(initialValue) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Calories") },
+        text = {
+            TextField(
+                value = calories,
+                onValueChange = { calories = it },
+                label = { Text("Calories per 100g") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(calories) }) {
+                Text("Confirm")
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EditNameDialog(
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf(initialValue) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Product Name") },
+        text = {
+            TextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Product Name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(name) }) {
+                Text("Confirm")
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+
+@androidx.annotation.OptIn(ExperimentalGetImage::class)
 private fun processImageProxy(imageProxy: ImageProxy, onBarcodeScanned: (String) -> Unit) {
     val image = imageProxy.image ?: return
     val inputImage = InputImage.fromMediaImage(image, imageProxy.imageInfo.rotationDegrees)
@@ -251,4 +402,18 @@ private fun processImageProxy(imageProxy: ImageProxy, onBarcodeScanned: (String)
 
 fun JsonElement?.toIntOrNull(): Int? {
     return this?.jsonPrimitive?.content?.toDoubleOrNull()?.toInt()
+}
+
+private fun FoodItem.toProductResponse(): ProductResponse {
+    return ProductResponse(
+        code = this.barcode,
+        product = Product(
+            productName = this.name,
+            imageUrl = this.imageUrl,
+            nutriments = com.example.barcodecaloriebuddy.network.dto.Nutriments(
+                energyKcal100g = this.caloriesPer100g?.let { Json.Default.encodeToJsonElement(it) }
+            )
+        ),
+        status = 1
+    )
 }

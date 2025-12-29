@@ -5,7 +5,11 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [FoodItem::class], version = 1, exportSchema = false)
+@Database(
+    entities = [FoodItem::class],
+    version = 2, // Incremented version
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun foodItemDao(): FoodItemDao
@@ -20,7 +24,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "food_item_database"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }
