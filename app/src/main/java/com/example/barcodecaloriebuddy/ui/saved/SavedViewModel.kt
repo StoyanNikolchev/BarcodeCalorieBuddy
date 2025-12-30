@@ -25,4 +25,19 @@ class SavedViewModel(private val foodRepository: FoodRepository) : ViewModel() {
             foodRepository.updateFoodItem(foodItem.copy(name = newName))
         }
     }
+
+    fun addSavedItemToTodaysLog(foodItem: FoodItem, quantity: Int) {
+        viewModelScope.launch {
+            val caloriesPer100g = foodItem.caloriesPer100g ?: 0
+            val totalCalories = (caloriesPer100g / 100.0 * quantity).toInt()
+            val newItem = foodItem.copy(
+                id = 0, // Let Room auto-generate a new ID
+                calories = totalCalories,
+                quantity = quantity,
+                date = System.currentTimeMillis(),
+                isArchived = false
+            )
+            foodRepository.addOrUpdateFoodItem(newItem)
+        }
+    }
 }
