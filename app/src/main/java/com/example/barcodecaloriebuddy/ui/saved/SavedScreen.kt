@@ -1,12 +1,19 @@
 package com.example.barcodecaloriebuddy.ui.saved
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,17 +23,20 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.di.Injection
 import com.example.barcodecaloriebuddy.ui.ViewModelFactory
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SavedScreen(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val viewModel: SavedViewModel = viewModel(
-        factory = ViewModelFactory(Injection.provideFoodRepository(LocalContext.current))
+        factory = ViewModelFactory(Injection.provideFoodRepository(context))
     )
     val savedFoodItems by viewModel.savedFoodItems.collectAsState()
     var foodItemToEdit by remember { mutableStateOf<FoodItem?>(null) }
@@ -39,26 +49,27 @@ fun SavedScreen(modifier: Modifier = Modifier) {
         LazyColumn(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             items(savedFoodItems, key = { it.id }) { foodItem ->
                 SavedItemRow(
-                    foodItem = foodItem, 
+                    foodItem = foodItem,
                     onEdit = { foodItemToEdit = foodItem },
-                    onClick = { foodItemToAdd = foodItem }
+                    onClick = { foodItemToAdd = foodItem },
+                    onToggleFavorite = { viewModel.toggleFavorite(foodItem) }
                 )
                 Divider()
             }
         }
     }
 
-    foodItemToEdit?.let { foodItem ->
-        EditNameDialog(
-            foodItem = foodItem,
+    foodItemToEdit?.let { item ->
+        EditSavedItemDialog(
+            foodItem = item,
             onDismiss = { foodItemToEdit = null },
-            onConfirm = { newName ->
-                viewModel.updateItemName(foodItem, newName)
+            onConfirm = { newName, newImageUri ->
+                viewModel.updateSavedItem(context, item, newName, newImageUri?.toString())
                 foodItemToEdit = null
             }
         )
     }
-    
+
     foodItemToAdd?.let { foodItem ->
         AddSavedItemToLogDialog(
             foodItem = foodItem,
@@ -72,7 +83,7 @@ fun SavedScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SavedItemRow(foodItem: FoodItem, onEdit: () -> Unit, onClick: () -> Unit) {
+private fun SavedItemRow(foodItem: FoodItem, onEdit: () -> Unit, onClick: () -> Unit, onToggleFavorite: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -101,28 +112,67 @@ private fun SavedItemRow(foodItem: FoodItem, onEdit: () -> Unit, onClick: () -> 
                 Text(text = "$it kcal/100g", style = MaterialTheme.typography.bodySmall)
             }
         }
+        IconButton(onClick = onToggleFavorite) {
+            Icon(
+                imageVector = if (foodItem.isFavorite) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = "Mark as favorite"
+            )
+        }
         IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, contentDescription = "Edit Name")
+            Icon(Icons.Default.Edit, contentDescription = "Edit")
         }
     }
 }
 
 @Composable
-private fun EditNameDialog(
+private fun EditSavedItemDialog(
     foodItem: FoodItem,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String, Uri?) -> Unit
 ) {
     var name by remember { mutableStateOf(foodItem.name) }
+    var imageUri by remember { mutableStateOf<Uri?>(foodItem.imageUrl?.let { Uri.parse(it) }) }
+    var showImageSourceDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        imageUri = uri
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            imageUri = tempCameraUri
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Item Name") },
+        title = { Text("Edit Item") },
         text = {
-            TextField(value = name, onValueChange = { name = it }, singleLine = true)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(modifier = Modifier.size(128.dp).clickable { showImageSourceDialog = true }) {
+                    if (imageUri != null) {
+                        AsyncImage(
+                            model = imageUri,
+                            contentDescription = "Selected image",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add image",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                TextField(value = name, onValueChange = { name = it }, singleLine = true)
+            }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(name) }) {
+            Button(onClick = { onConfirm(name, imageUri) }) {
                 Text("Save")
             }
         },
@@ -132,6 +182,22 @@ private fun EditNameDialog(
             }
         }
     )
+
+    if (showImageSourceDialog) {
+        ChooseImageSourceDialog(
+            onDismiss = { showImageSourceDialog = false },
+            onTakePhoto = {
+                val uri = ComposeFileProvider.getImageUri(context)
+                tempCameraUri = uri
+                cameraLauncher.launch(uri)
+                showImageSourceDialog = false
+            },
+            onChooseFromGallery = {
+                galleryLauncher.launch("image/*")
+                showImageSourceDialog = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -170,4 +236,55 @@ private fun AddSavedItemToLogDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ChooseImageSourceDialog(
+    onDismiss: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onChooseFromGallery: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Change Image") },
+        text = { Text("How would you like to set the image?") },
+        confirmButton = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onTakePhoto, modifier = Modifier.fillMaxWidth()) {
+                    Text("Take Photo")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = onChooseFromGallery, modifier = Modifier.fillMaxWidth()) {
+                    Text("Choose from Gallery")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+class ComposeFileProvider : FileProvider(
+    com.example.barcodecaloriebuddy.R.xml.file_paths
+) {
+    companion object {
+        fun getImageUri(context: Context): Uri {
+            val directory = File(context.cacheDir, "images")
+            directory.mkdirs()
+            val file = File.createTempFile(
+                "selected_image_",
+                ".jpg",
+                directory,
+            )
+            val authority = context.packageName + ".fileprovider"
+            return getUriForFile(
+                context,
+                authority,
+                file,
+            )
+        }
+    }
 }

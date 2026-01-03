@@ -3,14 +3,13 @@ package com.example.barcodecaloriebuddy.data
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FoodItemDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert
     suspend fun insert(foodItem: FoodItem)
 
     @Delete
@@ -36,4 +35,7 @@ interface FoodItemDao {
 
     @Query("SELECT * FROM food_items WHERE isArchived = 0 AND name = :name AND date >= :startOfDay AND date < :endOfDay LIMIT 1")
     suspend fun findTodaysItemByName(name: String, startOfDay: Long, endOfDay: Long): FoodItem?
+
+    @Query("UPDATE food_items SET name = :newName, imageUrl = :newImageUrl WHERE name = :oldName")
+    suspend fun updateProductDetails(oldName: String, newName: String, newImageUrl: String?)
 }

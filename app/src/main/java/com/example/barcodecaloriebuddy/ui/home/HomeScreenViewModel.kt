@@ -1,14 +1,20 @@
 package com.example.barcodecaloriebuddy.ui.home
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.data.FoodRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import java.util.Calendar
 
 class HomeScreenViewModel(private val foodRepository: FoodRepository) : ViewModel() {
@@ -30,17 +36,25 @@ class HomeScreenViewModel(private val foodRepository: FoodRepository) : ViewMode
         initialValue = 0
     )
 
-    fun addFoodItem(name: String, caloriesPer100g: Int, quantity: Int) {
+    fun addFoodItem(context: Context, name: String, caloriesPer100g: Int, quantity: Int, imageUrl: String?) {
         viewModelScope.launch {
+            val permanentImageUri = imageUrl?.let { saveImageLocally(context, Uri.parse(it)) }
             val totalCalories = (caloriesPer100g / 100.0 * quantity).toInt()
             foodRepository.addOrUpdateFoodItem(
                 FoodItem(
                     name = name, 
                     calories = totalCalories, 
                     quantity = quantity, 
-                    caloriesPer100g = caloriesPer100g
+                    caloriesPer100g = caloriesPer100g,
+                    imageUrl = permanentImageUri?.toString()
                 )
             )
+        }
+    }
+
+    fun updateFoodItem(foodItem: FoodItem) {
+        viewModelScope.launch {
+            foodRepository.updateFoodItem(foodItem)
         }
     }
 
@@ -60,6 +74,23 @@ class HomeScreenViewModel(private val foodRepository: FoodRepository) : ViewMode
     fun toggleFavorite(foodItem: FoodItem) {
         viewModelScope.launch {
             foodRepository.updateFoodItem(foodItem.copy(isFavorite = !foodItem.isFavorite))
+        }
+    }
+    
+    private suspend fun saveImageLocally(context: Context, uri: Uri): Uri? = withContext(Dispatchers.IO) {
+        try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val imagesDir = File(context.filesDir, "images")
+            if (!imagesDir.exists()) imagesDir.mkdirs()
+            val outputFile = File.createTempFile("item_", ".jpg", imagesDir)
+            val outputStream = FileOutputStream(outputFile)
+            inputStream?.copyTo(outputStream)
+            inputStream?.close()
+            outputStream.close()
+            Uri.fromFile(outputFile)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 

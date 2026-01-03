@@ -21,6 +21,10 @@ class FoodRepository(private val foodItemDao: FoodItemDao) {
         return foodItemDao.findMostRecentByBarcode(barcode)
     }
 
+    suspend fun findTodaysItemByName(name: String, startOfDay: Long, endOfDay: Long): FoodItem? {
+        return foodItemDao.findTodaysItemByName(name, startOfDay, endOfDay)
+    }
+
     suspend fun addOrUpdateFoodItem(foodItem: FoodItem) {
         val startOfDay = getStartOfDayInMillis()
         val endOfDay = getEndOfDayInMillis()
@@ -30,7 +34,6 @@ class FoodRepository(private val foodItemDao: FoodItemDao) {
             val updatedItem = existingItem.copy(
                 calories = existingItem.calories + foodItem.calories,
                 quantity = existingItem.quantity + foodItem.quantity,
-                // If the new item has an image, use it. Otherwise, keep the old one.
                 imageUrl = foodItem.imageUrl ?: existingItem.imageUrl 
             )
             foodItemDao.update(updatedItem)
@@ -45,6 +48,10 @@ class FoodRepository(private val foodItemDao: FoodItemDao) {
 
     suspend fun updateFoodItem(foodItem: FoodItem) {
         foodItemDao.update(foodItem)
+    }
+
+    suspend fun updateProductDetails(oldName: String, newName: String, newImageUrl: String?) {
+        foodItemDao.updateProductDetails(oldName, newName, newImageUrl)
     }
 
     suspend fun countOtherEntries(name: String, id: Int): Int {

@@ -2,6 +2,7 @@ package com.example.barcodecaloriebuddy.ui.scanner
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -11,15 +12,13 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -223,8 +222,14 @@ private fun ProductDetails(
     var productName by remember(state.response.code) {
         mutableStateOf(product?.productName ?: "Product name not found")
     }
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
     var showEditCaloriesDialog by remember { mutableStateOf(false) }
     var showEditNameDialog by remember { mutableStateOf(false) }
+    var showImageSourceDialog by remember { mutableStateOf(false) }
+    
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        imageUri = uri
+    }
 
     Column(
         modifier = Modifier
@@ -234,12 +239,23 @@ private fun ProductDetails(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        AsyncImage(
-            model = product?.imageUrl,
-            contentDescription = productName,
-            modifier = Modifier.size(150.dp),
-            contentScale = ContentScale.Fit
-        )
+        val displayImage: Any? = imageUri ?: product?.imageUrl
+        Box(modifier = Modifier.size(150.dp).clickable { showImageSourceDialog = true }) {
+            if (displayImage != null) {
+                AsyncImage(
+                    model = displayImage,
+                    contentDescription = productName,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.AddAPhoto,
+                    contentDescription = "Add a photo",
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -247,7 +263,7 @@ private fun ProductDetails(
             val tint = if (state.isFromCache) Color.Green else MaterialTheme.colorScheme.error
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text(if (state.isFromCache) "Previously added" else "New item", style = MaterialTheme.typography.bodySmall)
+            Text(if (state.isFromCache) "In your database" else "New item", style = MaterialTheme.typography.bodySmall)
         }
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -296,7 +312,7 @@ private fun ProductDetails(
                     name = productName,
                     calories = totalCalories,
                     quantity = grams,
-                    imageUrl = product?.imageUrl,
+                    imageUrl = imageUri?.toString() ?: product?.imageUrl,
                     caloriesPer100g = finalCaloriesPer100g,
                     barcode = state.response.code
                 )
@@ -326,6 +342,17 @@ private fun ProductDetails(
             onConfirm = { 
                 productName = it
                 showEditNameDialog = false
+            }
+        )
+    }
+    
+    if (showImageSourceDialog) {
+        ChooseImageSourceDialog(
+            onDismiss = { showImageSourceDialog = false },
+            onTakePhoto = { /* TODO */ },
+            onChooseFromGallery = { 
+                galleryLauncher.launch("image/*")
+                showImageSourceDialog = false
             }
         )
     }
@@ -390,6 +417,35 @@ private fun EditNameDialog(
         },
         dismissButton = {
             Button(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ChooseImageSourceDialog(
+    onDismiss: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onChooseFromGallery: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Change Image") },
+        text = { Text("How would you like to set the image?") },
+        confirmButton = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onTakePhoto, modifier = Modifier.fillMaxWidth()) {
+                    Text("Take Photo")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = onChooseFromGallery, modifier = Modifier.fillMaxWidth()) {
+                    Text("Choose from Gallery")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
         }
