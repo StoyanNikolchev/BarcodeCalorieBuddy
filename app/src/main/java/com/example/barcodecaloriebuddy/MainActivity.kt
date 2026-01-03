@@ -68,8 +68,8 @@ fun BarcodeCalorieBuddyApp() {
                     onNavigateToScanner = { showScanner = true }
                 )
                 AppDestinations.FAVORITES -> FavoritesScreen()
-                AppDestinations.HISTORY -> HistoryScreen()
                 AppDestinations.SAVED -> SavedScreen()
+                AppDestinations.HISTORY -> HistoryScreen()
             }
         }
     }
@@ -81,6 +81,6 @@ enum class AppDestinations(
 ) {
     HOME("Home", Icons.Filled.Home),
     FAVORITES("Favorites", Icons.Filled.Favorite),
-    HISTORY("History", Icons.Filled.DateRange),
     SAVED("Saved", Icons.Filled.List),
+    HISTORY("History", Icons.Filled.DateRange),
 }
