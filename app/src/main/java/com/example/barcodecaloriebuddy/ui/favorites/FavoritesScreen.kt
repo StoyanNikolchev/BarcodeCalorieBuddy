@@ -1,6 +1,5 @@
 package com.example.barcodecaloriebuddy.ui.favorites
 
-import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,13 +21,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.di.Injection
 import com.example.barcodecaloriebuddy.ui.ViewModelFactory
-import java.io.File
+import com.example.barcodecaloriebuddy.ui.saved.ComposeFileProvider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -185,7 +183,7 @@ private fun EditFavoriteItemDialog(
     )
 
     if (showImageSourceDialog) {
-        ChooseImageSourceDialog(
+        com.example.barcodecaloriebuddy.ui.saved.ChooseImageSourceDialog(
             onDismiss = { showImageSourceDialog = false },
             onTakePhoto = {
                 val uri = ComposeFileProvider.getImageUri(context)
@@ -266,26 +264,4 @@ private fun ChooseImageSourceDialog(
             }
         }
     )
-}
-
-class ComposeFileProvider : FileProvider(
-    com.example.barcodecaloriebuddy.R.xml.file_paths
-) {
-    companion object {
-        fun getImageUri(context: Context): Uri {
-            val directory = File(context.cacheDir, "images")
-            directory.mkdirs()
-            val file = File.createTempFile(
-                "selected_image_",
-                ".jpg",
-                directory,
-            )
-            val authority = context.packageName + ".fileprovider"
-            return getUriForFile(
-                context,
-                authority,
-                file,
-            )
-        }
-    }
 }

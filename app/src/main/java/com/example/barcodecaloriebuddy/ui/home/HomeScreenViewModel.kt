@@ -36,9 +36,15 @@ class HomeScreenViewModel(private val foodRepository: FoodRepository) : ViewMode
         initialValue = 0
     )
 
-    fun addFoodItem(context: Context, name: String, caloriesPer100g: Int, quantity: Int, imageUrl: String?) {
+    fun addFoodItem(context: Context, name: String, caloriesPer100g: Int, quantity: Int, imageUrl: String?, barcode: String? = null) {
         viewModelScope.launch {
-            val permanentImageUri = imageUrl?.let { saveImageLocally(context, Uri.parse(it)) }
+            // Only try to save locally if it's a local file URI
+            val finalImageUrl = if (imageUrl?.startsWith("content://") == true || imageUrl?.startsWith("file://") == true) {
+                saveImageLocally(context, Uri.parse(imageUrl))?.toString()
+            } else {
+                imageUrl
+            }
+            
             val totalCalories = (caloriesPer100g / 100.0 * quantity).toInt()
             foodRepository.addOrUpdateFoodItem(
                 FoodItem(
@@ -46,7 +52,8 @@ class HomeScreenViewModel(private val foodRepository: FoodRepository) : ViewMode
                     calories = totalCalories, 
                     quantity = quantity, 
                     caloriesPer100g = caloriesPer100g,
-                    imageUrl = permanentImageUri?.toString()
+                    imageUrl = finalImageUrl,
+                    barcode = barcode
                 )
             )
         }

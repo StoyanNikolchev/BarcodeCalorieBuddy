@@ -239,7 +239,7 @@ private fun AddSavedItemToLogDialog(
 }
 
 @Composable
-private fun ChooseImageSourceDialog(
+fun ChooseImageSourceDialog(
     onDismiss: () -> Unit,
     onTakePhoto: () -> Unit,
     onChooseFromGallery: () -> Unit

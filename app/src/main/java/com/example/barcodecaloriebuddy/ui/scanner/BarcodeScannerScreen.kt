@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,12 +32,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.example.barcodecaloriebuddy.ComposeFileProvider
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.di.Injection
 import com.example.barcodecaloriebuddy.network.FoodFactsApiService
 import com.example.barcodecaloriebuddy.network.dto.Product
 import com.example.barcodecaloriebuddy.network.dto.ProductResponse
+import com.example.barcodecaloriebuddy.ui.ViewModelFactory
+import com.example.barcodecaloriebuddy.ui.home.HomeScreenViewModel
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -54,6 +59,9 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val foodRepository = remember { Injection.provideFoodRepository(context) }
+    val homeViewModel: HomeScreenViewModel = viewModel(
+        factory = ViewModelFactory(foodRepository)
+    )
 
     var hasCameraPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -82,7 +90,7 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier, onDismiss: () -> Unit) {
                 title = { Text("Scan Barcode") },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -104,7 +112,7 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier, onDismiss: () -> Unit) {
                                     if (response.status == 1 && response.product != null) {
                                         uiState = ScannerUiState.ProductFound(response, isFromCache = false)
                                     } else {
-                                        uiState = ScannerUiState.ProductNotFound
+                                        uiState = ScannerUiState.ProductNotFound(barcode)
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
@@ -115,18 +123,48 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier, onDismiss: () -> Unit) {
                     }
                 }
                 is ScannerUiState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
                 }
                 is ScannerUiState.ProductFound -> {
-                    ProductDetails(state) { updatedProduct ->
-                        coroutineScope.launch {
-                            foodRepository.addOrUpdateFoodItem(updatedProduct)
-                            onDismiss()
-                        }
+                    ProductDetails(state) { name, kcalPer100g, grams, imageUri, barcode ->
+                        homeViewModel.addFoodItem(context, name, kcalPer100g, grams, imageUri?.toString(), barcode)
+                        onDismiss()
                     }
                 }
                 is ScannerUiState.ProductNotFound -> {
-                    ErrorScreen("Product not found for this barcode.", onRetry = { resetScannerState() })
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SearchOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Product not found", style = MaterialTheme.typography.headlineSmall)
+                        Text("Barcode: ${state.barcode}", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Button(onClick = { resetScannerState() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Scan Again")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                uiState = ScannerUiState.ProductFound(
+                                    response = ProductResponse(code = state.barcode, status = 1, product = Product()),
+                                    isFromCache = false
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Add Manually")
+                        }
+                    }
                 }
                 is ScannerUiState.Error -> {
                     ErrorScreen(state.message, onRetry = { resetScannerState() })
@@ -134,7 +172,9 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier, onDismiss: () -> Unit) {
             }
 
             if (!hasCameraPermission && uiState is ScannerUiState.Scanning) {
-                Text("Camera permission not granted", modifier = Modifier.align(Alignment.Center))
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Camera permission not granted")
+                }
             }
         }
     }
@@ -144,7 +184,7 @@ sealed class ScannerUiState {
     object Scanning : ScannerUiState()
     object Loading : ScannerUiState()
     data class ProductFound(val response: ProductResponse, val isFromCache: Boolean) : ScannerUiState()
-    object ProductNotFound : ScannerUiState()
+    data class ProductNotFound(val barcode: String) : ScannerUiState()
     data class Error(val message: String) : ScannerUiState()
 }
 
@@ -211,8 +251,9 @@ private fun CameraPreview(onBarcodeScanned: (String) -> Unit) {
 @Composable
 private fun ProductDetails(
     state: ScannerUiState.ProductFound,
-    onAdd: (FoodItem) -> Unit
+    onAdd: (String, Int, Int, Uri?, String?) -> Unit
 ) {
+    val context = LocalContext.current
     val product = state.response.product
     var quantity by remember { mutableStateOf("") }
     var caloriesPer100g by remember(state.response.code) {
@@ -222,13 +263,20 @@ private fun ProductDetails(
     var productName by remember(state.response.code) {
         mutableStateOf(product?.productName ?: "Product name not found")
     }
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    var imageUri by remember { mutableStateOf<Uri?>(product?.imageUrl?.let { Uri.parse(it) }) }
     var showEditCaloriesDialog by remember { mutableStateOf(false) }
     var showEditNameDialog by remember { mutableStateOf(false) }
     var showImageSourceDialog by remember { mutableStateOf(false) }
-    
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         imageUri = uri
+    }
+    
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            imageUri = tempCameraUri
+        }
     }
 
     Column(
@@ -239,11 +287,10 @@ private fun ProductDetails(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        val displayImage: Any? = imageUri ?: product?.imageUrl
         Box(modifier = Modifier.size(150.dp).clickable { showImageSourceDialog = true }) {
-            if (displayImage != null) {
+            if (imageUri != null) {
                 AsyncImage(
-                    model = displayImage,
+                    model = imageUri,
                     contentDescription = productName,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
@@ -259,25 +306,37 @@ private fun ProductDetails(
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val icon = if (state.isFromCache) Icons.Default.CheckCircle else Icons.Default.Error
+            val icon = if (state.isFromCache) Icons.Default.CheckCircle else Icons.Default.Cancel
             val tint = if (state.isFromCache) Color.Green else MaterialTheme.colorScheme.error
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text(if (state.isFromCache) "In your database" else "New item", style = MaterialTheme.typography.bodySmall)
+            Text(
+                if (state.isFromCache) "Previously added" else "New item", 
+                style = MaterialTheme.typography.bodySmall,
+                color = tint
+            )
         }
         
         Spacer(modifier = Modifier.height(16.dp))
 
+        val isNameMissing = productName.isBlank() || productName == "Product name not found"
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = productName)
+            Text(
+                text = productName,
+                color = if (isNameMissing && !state.isFromCache) MaterialTheme.colorScheme.error else Color.Unspecified
+            )
             if (!state.isFromCache) {
                 IconButton(onClick = { showEditNameDialog = true }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit Name")
+                    Icon(
+                        imageVector = Icons.Default.Edit, 
+                        contentDescription = "Edit Name",
+                        tint = if (isNameMissing) MaterialTheme.colorScheme.error else LocalContentColor.current
+                    )
                 }
             }
         }
 
-        val isCaloriesMissing = caloriesPer100g == "0"
+        val isCaloriesMissing = caloriesPer100g.toIntOrNull() ?: 0 <= 0
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Calories per 100g: $caloriesPer100g",
@@ -285,7 +344,11 @@ private fun ProductDetails(
             )
             if (!state.isFromCache) {
                 IconButton(onClick = { showEditCaloriesDialog = true }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit Calories")
+                    Icon(
+                        imageVector = Icons.Default.Edit, 
+                        contentDescription = "Edit Calories",
+                        tint = if (isCaloriesMissing) MaterialTheme.colorScheme.error else LocalContentColor.current
+                    )
                 }
             }
         }
@@ -302,21 +365,19 @@ private fun ProductDetails(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        val isAddEnabled = (quantity.toIntOrNull() ?: 0) > 0 && (caloriesPer100g.toIntOrNull() ?: 0) > 0
+        val isAddEnabled = !isNameMissing && !isCaloriesMissing && (quantity.toIntOrNull() ?: 0) > 0
         Button(
             onClick = {
                 val finalCaloriesPer100g = caloriesPer100g.toIntOrNull() ?: 0
                 val grams = quantity.toIntOrNull() ?: 0
                 val totalCalories = (finalCaloriesPer100g / 100.0 * grams).toInt()
-                val itemToAdd = FoodItem(
-                    name = productName,
-                    calories = totalCalories,
-                    quantity = grams,
-                    imageUrl = imageUri?.toString() ?: product?.imageUrl,
-                    caloriesPer100g = finalCaloriesPer100g,
-                    barcode = state.response.code
+                onAdd(
+                    productName, 
+                    finalCaloriesPer100g, 
+                    grams, 
+                    imageUri,
+                    state.response.code
                 )
-                onAdd(itemToAdd)
             },
             enabled = isAddEnabled
         ) {
@@ -347,9 +408,14 @@ private fun ProductDetails(
     }
     
     if (showImageSourceDialog) {
-        ChooseImageSourceDialog(
+        com.example.barcodecaloriebuddy.ui.saved.ChooseImageSourceDialog(
             onDismiss = { showImageSourceDialog = false },
-            onTakePhoto = { /* TODO */ },
+            onTakePhoto = { 
+                val uri = ComposeFileProvider.getImageUri(context)
+                tempCameraUri = uri
+                cameraLauncher.launch(uri)
+                showImageSourceDialog = false
+            },
             onChooseFromGallery = { 
                 galleryLauncher.launch("image/*")
                 showImageSourceDialog = false
@@ -384,7 +450,7 @@ private fun EditCaloriesDialog(
             }
         },
         dismissButton = {
-            Button(onClick = onDismiss) {
+            Button(onClick = { onDismiss() }) {
                 Text("Cancel")
             }
         }
@@ -416,42 +482,12 @@ private fun EditNameDialog(
             }
         },
         dismissButton = {
-            Button(onClick = onDismiss) {
+            Button(onClick = { onDismiss() }) {
                 Text("Cancel")
             }
         }
     )
 }
-
-@Composable
-private fun ChooseImageSourceDialog(
-    onDismiss: () -> Unit,
-    onTakePhoto: () -> Unit,
-    onChooseFromGallery: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Change Image") },
-        text = { Text("How would you like to set the image?") },
-        confirmButton = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onTakePhoto, modifier = Modifier.fillMaxWidth()) {
-                    Text("Take Photo")
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = onChooseFromGallery, modifier = Modifier.fillMaxWidth()) {
-                    Text("Choose from Gallery")
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
 
 @androidx.annotation.OptIn(ExperimentalGetImage::class)
 private fun processImageProxy(imageProxy: ImageProxy, onBarcodeScanned: (String) -> Unit) {

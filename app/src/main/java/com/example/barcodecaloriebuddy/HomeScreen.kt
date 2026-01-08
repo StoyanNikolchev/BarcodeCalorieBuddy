@@ -320,25 +320,27 @@ private fun EditTodaysItemDialog(
     onDismiss: () -> Unit,
     onConfirm: (FoodItem) -> Unit
 ) {
-    var calories by remember { mutableStateOf(foodItem.calories.toString()) }
+    var quantity by remember { mutableStateOf(foodItem.quantity.toString()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Calories") },
+        title = { Text("Edit Quantity") },
         text = {
             TextField(
-                value = calories,
-                onValueChange = { calories = it },
-                label = { Text("Total Calories") },
+                value = quantity,
+                onValueChange = { quantity = it },
+                label = { Text("Quantity (grams)") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true
             )
         },
         confirmButton = {
             Button(onClick = {
-                val caloriesInt = calories.toIntOrNull() ?: 0
-                if (caloriesInt > 0) {
-                    onConfirm(foodItem.copy(calories = caloriesInt))
+                val quantityInt = quantity.toIntOrNull() ?: 0
+                if (quantityInt > 0) {
+                    val caloriesPer100g = foodItem.caloriesPer100g ?: 0
+                    val newTotalCalories = (caloriesPer100g / 100.0 * quantityInt).toInt()
+                    onConfirm(foodItem.copy(quantity = quantityInt, calories = newTotalCalories))
                 }
             }) {
                 Text("Save")
