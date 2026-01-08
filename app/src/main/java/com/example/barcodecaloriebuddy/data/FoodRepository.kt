@@ -34,7 +34,8 @@ class FoodRepository(private val foodItemDao: FoodItemDao) {
             val updatedItem = existingItem.copy(
                 calories = existingItem.calories + foodItem.calories,
                 quantity = existingItem.quantity + foodItem.quantity,
-                imageUrl = foodItem.imageUrl ?: existingItem.imageUrl 
+                imageUrl = foodItem.imageUrl ?: existingItem.imageUrl,
+                barcode = foodItem.barcode ?: existingItem.barcode
             )
             foodItemDao.update(updatedItem)
         } else {

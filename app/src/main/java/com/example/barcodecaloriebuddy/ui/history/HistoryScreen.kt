@@ -23,6 +23,7 @@ import coil.compose.AsyncImage
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.di.Injection
 import com.example.barcodecaloriebuddy.ui.ViewModelFactory
+import com.example.barcodecaloriebuddy.ui.components.ImagePreviewDialog
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -34,6 +35,8 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
     )
     val historyState by viewModel.historyState.collectAsState()
     var selectedFoodItem by remember { mutableStateOf<FoodItem?>(null) }
+    var previewImageUrl by remember { mutableStateOf<String?>(null) }
+    var showImagePreview by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -55,7 +58,14 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                         AnimatedVisibility(visible = isExpanded) {
                             Column {
                                 items.forEach { foodItem ->
-                                    FoodItemHistoryRow(foodItem = foodItem, onClick = { selectedFoodItem = foodItem })
+                                    FoodItemHistoryRow(
+                                        foodItem = foodItem, 
+                                        onClick = { selectedFoodItem = foodItem },
+                                        onImageClick = {
+                                            previewImageUrl = foodItem.imageUrl
+                                            showImagePreview = true
+                                        }
+                                    )
                                     Divider()
                                 }
                             }
@@ -74,6 +84,13 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 viewModel.addHistoryItemToTodaysLog(it, quantity)
                 selectedFoodItem = null
             }
+        )
+    }
+
+    if (showImagePreview) {
+        ImagePreviewDialog(
+            imageUrl = previewImageUrl,
+            onDismiss = { showImagePreview = false }
         )
     }
 }
@@ -106,7 +123,11 @@ private fun DaySummaryRow(
 }
 
 @Composable
-private fun FoodItemHistoryRow(foodItem: FoodItem, onClick: () -> Unit) {
+private fun FoodItemHistoryRow(
+    foodItem: FoodItem, 
+    onClick: () -> Unit,
+    onImageClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -116,15 +137,19 @@ private fun FoodItemHistoryRow(foodItem: FoodItem, onClick: () -> Unit) {
     ) {
         if (foodItem.imageUrl.isNullOrEmpty()) {
             Icon(
-                imageVector = Icons.Filled.Restaurant,
+                imageVector = Icons.Default.Restaurant,
                 contentDescription = foodItem.name,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier
+                    .size(48.dp)
+                    .clickable(onClick = onImageClick)
             )
         } else {
             AsyncImage(
                 model = foodItem.imageUrl,
                 contentDescription = foodItem.name,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier
+                    .size(48.dp)
+                    .clickable(onClick = onImageClick),
                 contentScale = ContentScale.Crop
             )
         }

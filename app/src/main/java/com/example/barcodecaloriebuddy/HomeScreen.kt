@@ -29,6 +29,7 @@ import coil.compose.AsyncImage
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.di.Injection
 import com.example.barcodecaloriebuddy.ui.ViewModelFactory
+import com.example.barcodecaloriebuddy.ui.components.ImagePreviewDialog
 import com.example.barcodecaloriebuddy.ui.home.HomeScreenViewModel
 import java.io.File
 
@@ -43,6 +44,8 @@ fun HomeScreen(modifier: Modifier = Modifier, onNavigateToScanner: () -> Unit) {
     var showAddFoodDialog by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
     var itemToEdit by remember { mutableStateOf<FoodItem?>(null) }
+    var previewImageUrl by remember { mutableStateOf<String?>(null) }
+    var showImagePreview by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Scaffold(
@@ -100,7 +103,11 @@ fun HomeScreen(modifier: Modifier = Modifier, onNavigateToScanner: () -> Unit) {
                         foodItem = foodItem, 
                         onDelete = { viewModel.deleteFoodItem(it) },
                         onToggleFavorite = { viewModel.toggleFavorite(it) },
-                        onClick = { itemToEdit = foodItem }
+                        onClick = { itemToEdit = foodItem },
+                        onImageClick = { 
+                            previewImageUrl = foodItem.imageUrl
+                            showImagePreview = true
+                        }
                     )
                     Divider()
                 }
@@ -128,6 +135,13 @@ fun HomeScreen(modifier: Modifier = Modifier, onNavigateToScanner: () -> Unit) {
             }
         )
     }
+
+    if (showImagePreview) {
+        ImagePreviewDialog(
+            imageUrl = previewImageUrl,
+            onDismiss = { showImagePreview = false }
+        )
+    }
 }
 
 @Composable
@@ -135,7 +149,8 @@ private fun FoodItemRow(
     foodItem: FoodItem, 
     onDelete: (FoodItem) -> Unit, 
     onToggleFavorite: (FoodItem) -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onImageClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -146,15 +161,19 @@ private fun FoodItemRow(
     ) {
         if (foodItem.imageUrl.isNullOrEmpty()) {
             Icon(
-                imageVector = Icons.Filled.Restaurant,
+                imageVector = Icons.Default.Restaurant,
                 contentDescription = foodItem.name,
-                modifier = Modifier.size(64.dp)
+                modifier = Modifier
+                    .size(64.dp)
+                    .clickable(onClick = onImageClick)
             )
         } else {
             AsyncImage(
                 model = foodItem.imageUrl,
                 contentDescription = foodItem.name,
-                modifier = Modifier.size(64.dp),
+                modifier = Modifier
+                    .size(64.dp)
+                    .clickable(onClick = onImageClick),
                 contentScale = ContentScale.Crop
             )
         }
@@ -174,7 +193,8 @@ private fun FoodItemRow(
         IconButton(onClick = { onToggleFavorite(foodItem) }) {
             Icon(
                 imageVector = if (foodItem.isFavorite) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = "Mark as favorite"
+                contentDescription = "Mark as favorite",
+                tint = if (foodItem.isFavorite) MaterialTheme.colorScheme.primary else LocalContentColor.current
             )
         }
         IconButton(onClick = { onDelete(foodItem) }) {

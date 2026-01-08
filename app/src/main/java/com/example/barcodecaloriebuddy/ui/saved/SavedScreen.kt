@@ -30,6 +30,7 @@ import coil.compose.AsyncImage
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.di.Injection
 import com.example.barcodecaloriebuddy.ui.ViewModelFactory
+import com.example.barcodecaloriebuddy.ui.components.ImagePreviewDialog
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,6 +44,8 @@ fun SavedScreen(modifier: Modifier = Modifier) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     var foodItemToEdit by remember { mutableStateOf<FoodItem?>(null) }
     var foodItemToAdd by remember { mutableStateOf<FoodItem?>(null) }
+    var previewImageUrl by remember { mutableStateOf<String?>(null) }
+    var showImagePreview by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -73,7 +76,11 @@ fun SavedScreen(modifier: Modifier = Modifier) {
                     foodItem = foodItem,
                     onEdit = { foodItemToEdit = foodItem },
                     onClick = { foodItemToAdd = foodItem },
-                    onToggleFavorite = { viewModel.toggleFavorite(foodItem) }
+                    onToggleFavorite = { viewModel.toggleFavorite(foodItem) },
+                    onImageClick = {
+                        previewImageUrl = foodItem.imageUrl
+                        showImagePreview = true
+                    }
                 )
                 Divider()
             }
@@ -101,10 +108,23 @@ fun SavedScreen(modifier: Modifier = Modifier) {
             }
         )
     }
+
+    if (showImagePreview) {
+        ImagePreviewDialog(
+            imageUrl = previewImageUrl,
+            onDismiss = { showImagePreview = false }
+        )
+    }
 }
 
 @Composable
-private fun SavedItemRow(foodItem: FoodItem, onEdit: () -> Unit, onClick: () -> Unit, onToggleFavorite: () -> Unit) {
+private fun SavedItemRow(
+    foodItem: FoodItem, 
+    onEdit: () -> Unit, 
+    onClick: () -> Unit, 
+    onToggleFavorite: () -> Unit,
+    onImageClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -114,15 +134,19 @@ private fun SavedItemRow(foodItem: FoodItem, onEdit: () -> Unit, onClick: () -> 
     ) {
         if (foodItem.imageUrl.isNullOrEmpty()) {
             Icon(
-                imageVector = Icons.Filled.Restaurant,
+                imageVector = Icons.Default.Restaurant,
                 contentDescription = foodItem.name,
-                modifier = Modifier.size(64.dp)
+                modifier = Modifier
+                    .size(64.dp)
+                    .clickable(onClick = onImageClick)
             )
         } else {
             AsyncImage(
                 model = foodItem.imageUrl,
                 contentDescription = foodItem.name,
-                modifier = Modifier.size(64.dp),
+                modifier = Modifier
+                    .size(64.dp)
+                    .clickable(onClick = onImageClick),
                 contentScale = ContentScale.Crop
             )
         }
@@ -136,7 +160,8 @@ private fun SavedItemRow(foodItem: FoodItem, onEdit: () -> Unit, onClick: () -> 
         IconButton(onClick = onToggleFavorite) {
             Icon(
                 imageVector = if (foodItem.isFavorite) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = "Mark as favorite"
+                contentDescription = "Mark as favorite",
+                tint = if (foodItem.isFavorite) MaterialTheme.colorScheme.primary else LocalContentColor.current
             )
         }
         IconButton(onClick = onEdit) {

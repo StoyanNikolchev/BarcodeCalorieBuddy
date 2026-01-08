@@ -41,6 +41,7 @@ import com.example.barcodecaloriebuddy.network.FoodFactsApiService
 import com.example.barcodecaloriebuddy.network.dto.Product
 import com.example.barcodecaloriebuddy.network.dto.ProductResponse
 import com.example.barcodecaloriebuddy.ui.ViewModelFactory
+import com.example.barcodecaloriebuddy.ui.components.ImagePreviewDialog
 import com.example.barcodecaloriebuddy.ui.home.HomeScreenViewModel
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -180,74 +181,6 @@ fun BarcodeScannerScreen(modifier: Modifier = Modifier, onDismiss: () -> Unit) {
     }
 }
 
-sealed class ScannerUiState {
-    object Scanning : ScannerUiState()
-    object Loading : ScannerUiState()
-    data class ProductFound(val response: ProductResponse, val isFromCache: Boolean) : ScannerUiState()
-    data class ProductNotFound(val barcode: String) : ScannerUiState()
-    data class Error(val message: String) : ScannerUiState()
-}
-
-@Composable
-fun ErrorScreen(message: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(message)
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onRetry) {
-            Text("Scan Again")
-        }
-    }
-}
-
-@Composable
-private fun CameraPreview(onBarcodeScanned: (String) -> Unit) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-    var isScanning by remember { mutableStateOf(true) }
-
-    AndroidView(
-        factory = { ctx ->
-            val previewView = PreviewView(ctx)
-            val executor = Executors.newSingleThreadExecutor()
-            cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
-                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-
-                imageAnalysis.setAnalyzer(executor) { imageProxy ->
-                    if (isScanning) {
-                        processImageProxy(imageProxy) { barcode ->
-                            isScanning = false
-                            onBarcodeScanned(barcode)
-                        }
-                    }
-                }
-
-                try {
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }, ContextCompat.getMainExecutor(ctx))
-            previewView
-        },
-        modifier = Modifier.fillMaxSize(),
-        onRelease = {
-            cameraProviderFuture.get().unbindAll()
-        }
-    )
-}
-
 @Composable
 private fun ProductDetails(
     state: ScannerUiState.ProductFound,
@@ -267,6 +200,7 @@ private fun ProductDetails(
     var showEditCaloriesDialog by remember { mutableStateOf(false) }
     var showEditNameDialog by remember { mutableStateOf(false) }
     var showImageSourceDialog by remember { mutableStateOf(false) }
+    var showImagePreview by remember { mutableStateOf(false) }
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -287,19 +221,38 @@ private fun ProductDetails(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        Box(modifier = Modifier.size(150.dp).clickable { showImageSourceDialog = true }) {
+        Box(modifier = Modifier.size(150.dp)) {
             if (imageUri != null) {
                 AsyncImage(
                     model = imageUri,
                     contentDescription = productName,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable { showImagePreview = true },
                     contentScale = ContentScale.Fit
                 )
+                IconButton(
+                    onClick = { showImageSourceDialog = true },
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                ) {
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Change Image",
+                            modifier = Modifier.padding(4.dp)
+                        )
+                    }
+                }
             } else {
                 Icon(
                     imageVector = Icons.Filled.AddAPhoto,
                     contentDescription = "Add a photo",
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable { showImageSourceDialog = true },
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -422,6 +375,81 @@ private fun ProductDetails(
             }
         )
     }
+
+    if (showImagePreview) {
+        ImagePreviewDialog(
+            imageUrl = imageUri?.toString(),
+            onDismiss = { showImagePreview = false }
+        )
+    }
+}
+
+sealed class ScannerUiState {
+    object Scanning : ScannerUiState()
+    object Loading : ScannerUiState()
+    data class ProductFound(val response: ProductResponse, val isFromCache: Boolean) : ScannerUiState()
+    data class ProductNotFound(val barcode: String) : ScannerUiState()
+    data class Error(val message: String) : ScannerUiState()
+}
+
+@Composable
+fun ErrorScreen(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(message)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onRetry) {
+            Text("Scan Again")
+        }
+    }
+}
+
+@Composable
+private fun CameraPreview(onBarcodeScanned: (String) -> Unit) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    var isScanning by remember { mutableStateOf(true) }
+
+    AndroidView(
+        factory = { ctx ->
+            val previewView = PreviewView(ctx)
+            val executor = Executors.newSingleThreadExecutor()
+            cameraProviderFuture.addListener({
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+
+                imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                    if (isScanning) {
+                        processImageProxy(imageProxy) { barcode ->
+                            isScanning = false
+                            onBarcodeScanned(barcode)
+                        }
+                    }
+                }
+
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }, ContextCompat.getMainExecutor(ctx))
+            previewView
+        },
+        modifier = Modifier.fillMaxSize(),
+        onRelease = {
+            cameraProviderFuture.get().unbindAll()
+        }
+    )
 }
 
 @Composable
