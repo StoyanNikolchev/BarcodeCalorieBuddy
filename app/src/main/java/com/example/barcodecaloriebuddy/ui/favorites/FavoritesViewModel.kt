@@ -7,10 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.barcodecaloriebuddy.data.FoodItem
 import com.example.barcodecaloriebuddy.data.FoodRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -18,13 +15,28 @@ import java.io.FileOutputStream
 
 class FavoritesViewModel(private val foodRepository: FoodRepository) : ViewModel() {
 
-    val favoriteFoodItems: StateFlow<List<FoodItem>> = foodRepository.getFavoriteFoodItems()
-        .map { items -> items.distinctBy { it.name } }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    val favoriteFoodItems: StateFlow<List<FoodItem>> = combine(
+        foodRepository.getFavoriteFoodItems(),
+        _searchQuery
+    ) { items, query ->
+        val distinctItems = items.distinctBy { it.name }
+        if (query.isBlank()) {
+            distinctItems
+        } else {
+            distinctItems.filter { it.name.contains(query, ignoreCase = true) }
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    fun onSearchQueryChange(query: String) {
+        _searchQuery.value = query
+    }
 
     fun addFavoriteToTodaysLog(foodItem: FoodItem, quantity: Int) {
         viewModelScope.launch {

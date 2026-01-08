@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,12 +40,32 @@ fun SavedScreen(modifier: Modifier = Modifier) {
         factory = ViewModelFactory(Injection.provideFoodRepository(context))
     )
     val savedFoodItems by viewModel.savedFoodItems.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     var foodItemToEdit by remember { mutableStateOf<FoodItem?>(null) }
     var foodItemToAdd by remember { mutableStateOf<FoodItem?>(null) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = { CenterAlignedTopAppBar(title = { Text("Saved Items") }) }
+        topBar = {
+            Column {
+                CenterAlignedTopAppBar(title = { Text("Saved Items") })
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.onSearchQueryChange(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("Search items...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        disabledContainerColor = MaterialTheme.colorScheme.surface,
+                    )
+                )
+            }
+        }
     ) { paddingValues ->
         LazyColumn(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             items(savedFoodItems, key = { it.id }) { foodItem ->
@@ -184,7 +205,7 @@ private fun EditSavedItemDialog(
     )
 
     if (showImageSourceDialog) {
-        ChooseImageSourceDialog(
+        com.example.barcodecaloriebuddy.ui.saved.ChooseImageSourceDialog(
             onDismiss = { showImageSourceDialog = false },
             onTakePhoto = {
                 val uri = ComposeFileProvider.getImageUri(context)

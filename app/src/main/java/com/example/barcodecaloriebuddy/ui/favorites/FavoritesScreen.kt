@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,12 +37,32 @@ fun FavoritesScreen(modifier: Modifier = Modifier) {
         factory = ViewModelFactory(Injection.provideFoodRepository(context))
     )
     val favoriteFoodItems by viewModel.favoriteFoodItems.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     var foodItemToEdit by remember { mutableStateOf<FoodItem?>(null) }
     var foodItemToAdd by remember { mutableStateOf<FoodItem?>(null) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = { CenterAlignedTopAppBar(title = { Text("Favorites") }) }
+        topBar = {
+            Column {
+                CenterAlignedTopAppBar(title = { Text("Favorites") })
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.onSearchQueryChange(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("Search favorites...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        disabledContainerColor = MaterialTheme.colorScheme.surface,
+                    )
+                )
+            }
+        }
     ) { paddingValues ->
         LazyColumn(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             items(favoriteFoodItems, key = { it.id }) { foodItem ->

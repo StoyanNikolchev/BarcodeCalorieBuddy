@@ -299,7 +299,8 @@ private fun ProductDetails(
                 Icon(
                     imageVector = Icons.Filled.AddAPhoto,
                     contentDescription = "Add a photo",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -336,7 +337,7 @@ private fun ProductDetails(
             }
         }
 
-        val isCaloriesMissing = caloriesPer100g.toIntOrNull() ?: 0 <= 0
+        val isCaloriesMissing = (caloriesPer100g.toIntOrNull() ?: 0) <= 0
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Calories per 100g: $caloriesPer100g",
@@ -370,7 +371,6 @@ private fun ProductDetails(
             onClick = {
                 val finalCaloriesPer100g = caloriesPer100g.toIntOrNull() ?: 0
                 val grams = quantity.toIntOrNull() ?: 0
-                val totalCalories = (finalCaloriesPer100g / 100.0 * grams).toInt()
                 onAdd(
                     productName, 
                     finalCaloriesPer100g, 
